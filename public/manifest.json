@@ -1,0 +1,10 @@
+{
+  "name": "São Remo 3D",
+  "short_name": "São Remo",
+  "description": "Exploração 3D da Comunidade São Remo",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#1a1a1a",
+  "theme_color": "#0044cc"
+}

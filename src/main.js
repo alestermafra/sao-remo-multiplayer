@@ -108,6 +108,9 @@ class Game {
           if (nameDisplay) nameDisplay.textContent = chosenName;
           this.network.sendRename(chosenName);
 
+          // Ativa tela inteira no celular
+          this.requestFullscreen();
+
           // Libera os controles e fecha o modal
           this.input.enabled = true;
           loginModal.style.display = 'none';
@@ -115,6 +118,14 @@ class Game {
           // Mensagem de boas-vindas no chat
           this.player.showSpeech(`Salve! Cheguei na São Remo.`);
         }
+      });
+    }
+
+    // Botão de alternar Tela Cheia no HUD
+    const fullscreenBtn = document.getElementById('btn-fullscreen-toggle');
+    if (fullscreenBtn) {
+      fullscreenBtn.addEventListener('click', () => {
+        this.toggleFullscreen();
       });
     }
 
@@ -136,6 +147,33 @@ class Game {
     this.network.onChatMessage = (msg) => {
       this.chatUI.addMessage(msg);
     };
+  }
+
+  requestFullscreen() {
+    const doc = document.documentElement;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (doc.requestFullscreen) {
+        doc.requestFullscreen().catch(() => {});
+      } else if (doc.webkitRequestFullscreen) {
+        doc.webkitRequestFullscreen();
+      }
+    }
+    // Tenta travar orientação na horizontal no celular
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+  }
+
+  toggleFullscreen() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      this.requestFullscreen();
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    }
   }
 
   updatePhysics(delta) {
