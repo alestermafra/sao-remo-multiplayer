@@ -1,0 +1,28 @@
+{
+  "name": "sao-remo-multiplayer",
+  "version": "1.0.0",
+  "description": "São Remo Express 3D - Jogo de mundo aberto low-poly multiplayer na favela São Remo",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "dev:client": "vite --host 0.0.0.0 --port 3000",
+    "dev:server": "node server/server.js",
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "vite build",
+    "start": "node server/server.js",
+    "start:local": "npm run build && PORT=3000 node server/server.js"
+  },
+  "keywords": ["game", "threejs", "multiplayer", "sao-remo", "favela", "delivery"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "vite": "^6.0.7"
+  }
+}

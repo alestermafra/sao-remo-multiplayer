@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>São Remo - Rua Baltazar Rabelo 3D</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #1a1a1a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: none;
+    }
+
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+
+    /* Top Street Indication & HUD */
+    #top-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-card {
+      background: rgba(18, 18, 24, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      backdrop-filter: blur(10px);
+      padding: 8px 16px;
+      border-radius: 14px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      pointer-events: auto;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+    }
+
+    .street-tag {
+      background: linear-gradient(135deg, #0044cc, #002277);
+      border: 1px solid #3388ff;
+      color: #fff;
+      font-weight: 900;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 8px;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .street-progress {
+      color: #ffdf40;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .hud-nick {
+      font-weight: bold;
+      color: #44ff88;
+      cursor: pointer;
+    }
+
+    /* Left Virtual Joystick */
+    #touch-joystick-zone {
+      position: absolute;
+      bottom: 26px;
+      left: 28px;
+      width: 124px;
+      height: 124px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px dashed rgba(255, 255, 255, 0.35);
+      z-index: 15;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      touch-action: none;
+    }
+
+    #touch-joystick-knob {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #00ff88 0%, #009955 100%);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      pointer-events: none;
+      transform: translate(0px, 0px);
+    }
+
+    /* Right Action Buttons (Pular e Correr) */
+    #touch-actions-zone {
+      position: absolute;
+      bottom: 26px;
+      right: 28px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      z-index: 15;
+    }
+
+    .touch-btn {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      font-size: 22px;
+      font-weight: bold;
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      touch-action: none;
+      transition: transform 0.08s ease;
+    }
+
+    .touch-btn:active {
+      transform: scale(0.90);
+    }
+
+    .touch-btn span {
+      font-size: 10px;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+
+    .btn-jump {
+      background: linear-gradient(135deg, #ff9900, #e65100);
+    }
+
+    .btn-run {
+      background: linear-gradient(135deg, #00e676, #00a854);
+    }
+
+    /* Chat Container */
+    #chat-container {
+      position: absolute;
+      bottom: 20px;
+      left: 175px;
+      width: 280px;
+      max-height: 170px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      z-index: 20;
+      overflow: hidden;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+
+    #chat-container.minimized {
+      transform: translateY(130px);
+      opacity: 0.5;
+    }
+
+    #chat-messages {
+      flex: 1;
+      padding: 8px 10px;
+      overflow-y: auto;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 105px;
+    }
+
+    .chat-item {
+      color: #e2e8f0;
+      word-break: break-word;
+    }
+
+    .chat-item .nick {
+      font-weight: bold;
+      color: #38bdf8;
+    }
+
+    .chat-item.system {
+      color: #fbbf24;
+      font-style: italic;
+    }
+
+    #chat-input-bar {
+      display: flex;
+      padding: 6px;
+      background: rgba(0, 0, 0, 0.45);
+      gap: 5px;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: #fff;
+      font-size: 12px;
+      outline: none;
+    }
+
+    #chat-send-btn {
+      background: #00ff88;
+      border: none;
+      color: #111;
+      font-weight: bold;
+      padding: 0 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* Quick emote chips */
+    #quick-chips {
+      position: absolute;
+      top: 60px;
+      right: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+      pointer-events: auto;
+    }
+
+    .chat-chip {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 14px;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+    }
+
+    .chat-chip:active {
+      background: #00ff88;
+      color: #111;
+    }
+
+    #info-badge {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 11px;
+      z-index: 5;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+
+    @media (max-width: 600px) {
+      #chat-container {
+        left: 140px;
+        width: 180px;
+      }
+      #touch-joystick-zone {
+        left: 14px;
+        bottom: 14px;
+      }
+      #touch-actions-zone {
+        right: 14px;
+        bottom: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Top Street & Player HUD -->
+  <div id="top-hud">
+    <div class="hud-card">
+      <div class="street-tag" id="street-tag-display">
+        📍 RUA BALTAZAR RABELO
+      </div>
+    </div>
+
+    <div class="hud-card">
+      <span id="player-name-display" class="hud-nick" title="Clique para trocar de nome">Morador</span>
+      <button id="change-nick-btn" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:12px;">✏️</button>
+    </div>
+  </div>
+
+  <!-- Quick Chat Emotes -->
+  <div id="quick-chips">
+    <button class="chat-chip" data-msg="Salve São Remo! ✌️">Salve!</button>
+    <button class="chat-chip" data-msg="Subindo a Baltazar Rabelo! 🏃">Subindo ladeira</button>
+    <button class="chat-chip" data-msg="Bora lá em cima! ⬆️">Bora!</button>
+  </div>
+
+  <!-- Chat Log & Input Window -->
+  <div id="chat-container">
+    <div id="chat-messages">
+      <div class="chat-item system"><strong>📢 São Remo:</strong> Mapa oficial carregado! Ande e pule livremente por todas as ruas da comunidade.</div>
+    </div>
+    <div id="chat-input-bar">
+      <input type="text" id="chat-input" placeholder="Mensagem... (Enter)" maxlength="100">
+      <button id="chat-send-btn">➤</button>
+    </div>
+  </div>
+
+  <!-- Mobile Touch Controls: Left Thumb Virtual Joystick -->
+  <div id="touch-joystick-zone">
+    <div id="touch-joystick-knob"></div>
+  </div>
+
+  <!-- Mobile Touch Controls: Right Thumb Buttons (Pular e Correr) -->
+  <div id="touch-actions-zone">
+    <button id="btn-jump" class="touch-btn btn-jump">
+      🦘
+      <span>PULAR</span>
+    </button>
+    <button id="btn-run" class="touch-btn btn-run">
+      ⚡
+      <span>CORRER</span>
+    </button>
+  </div>
+
+  <div id="info-badge">PC: W/A/S/D para Andar | ESPAÇO para Pular | SHIFT para Correr</div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
