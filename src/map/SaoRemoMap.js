@@ -15,7 +15,8 @@ export class SaoRemoMap {
     // Map structures
     this.streetSegments = [];
     this.solidColliders = [];
-    this.barracoColliders = [];
+    this.barracoBoxes = [];
+    this.barracoArea = null;
 
     this.buildGround();
     this.buildStreetsFromGeoJSON();
@@ -408,7 +409,7 @@ export class SaoRemoMap {
   buildBarracosArea(pts) {
     const group = new THREE.Group();
 
-    // Pavimentação das vielas internas
+    // Pavimentação da base das vielas sob os barracos
     const shape = this.createShapeFromPoints(pts);
     const geom = new THREE.ShapeGeometry(shape);
     geom.rotateX(-Math.PI / 2);
@@ -417,7 +418,7 @@ export class SaoRemoMap {
     groundMesh.receiveShadow = true;
     group.add(groundMesh);
 
-    // Orientação do quarteirão para alinhar os barracos e vielas
+    // Orientação do quarteirão para dispor os barracos colados e vielas
     const p0 = pts[0], p1 = pts[1], p3 = pts[3];
     const uX = (p1.x - p0.x), uY = (p1.y - p0.y);
     const vX = (p3.x - p0.x), vY = (p3.y - p0.y);
@@ -426,6 +427,8 @@ export class SaoRemoMap {
     const dirU = { x: uX / lenU, y: uY / lenU };
     const dirV = { x: vX / lenV, y: vY / lenV };
     const gridAngle = Math.atan2(dirU.y, dirU.x);
+
+    this.barracoArea = { p0, dirU, dirV, lenU, lenV };
 
     const houseMaterials = [
       this.materials.brickWall,
@@ -437,75 +440,89 @@ export class SaoRemoMap {
       this.materials.whiteWall
     ];
 
-    const stepU = 8.5;
-    const stepV = 8.0;
+    const bw = 5.2; // Largura do barraco (colado lado a lado)
+    const bd = 4.8; // Profundidade do barraco
+    const alleyWidth = 2.4; // Largura da viela entre fileiras
+    const pairBlock = (bd * 2) + alleyWidth; // Bloco duplo colado pelos fundos + viela
 
-    let seed = 73;
+    let seed = 91;
     const pseudoRandom = () => {
       seed = (seed * 9301 + 49297) % 233280;
       return seed / 233280;
     };
 
-    for (let u = 4.5; u < lenU - 4.5; u += stepU) {
-      for (let v = 4.5; v < lenV - 4.5; v += stepV) {
-        // Vielas principais no meio do quarteirão para o jogador circular
-        if (Math.abs(u - lenU / 2) < 2.5 || Math.abs(v - lenV / 2) < 2.5) continue;
+    let houseIndex = 0;
 
-        const posX = p0.x + dirU.x * u + dirV.x * v;
-        const posZ = p0.y + dirU.y * u + dirV.y * v;
+    // Fileiras duplas (fundos colados) com vielas na frente
+    for (let vPair = 2.5; vPair <= lenV - (bd * 2); vPair += pairBlock) {
+      for (const rowOffset of [0, bd]) {
+        const vCenter = vPair + rowOffset + (bd / 2);
+        let col = 0;
 
-        if (!this.isPointInPolygon(posX, posZ, pts)) continue;
+        for (let u = 2.5; u <= lenU - bw; u += bw) {
+          col++;
+          // A cada 5 barracos, um pequeno beco transversal de 2m para passagem
+          if (col % 6 === 0) {
+            u += 2.0;
+            continue;
+          }
 
-        const rand = pseudoRandom();
-        const rand2 = pseudoRandom();
+          const uCenter = u + (bw / 2);
+          const posX = p0.x + dirU.x * uCenter + dirV.x * vCenter;
+          const posZ = p0.y + dirU.y * uCenter + dirV.y * vCenter;
 
-        // Dimensões do barraco
-        const bw = 5.2 + rand * 0.8;
-        const bd = 5.0 + rand2 * 0.8;
+          if (!this.isPointInPolygon(posX, posZ, pts)) continue;
 
-        // Andares (1 a 3 andares)
-        let floors = 1;
-        if (rand > 0.45) floors = 2;
-        if (rand > 0.85) floors = 3;
-        const height = floors * 2.8;
+          houseIndex++;
+          const rand = pseudoRandom();
+          const rand2 = pseudoRandom();
 
-        // Casa
-        const houseGeo = new THREE.BoxGeometry(bw, height, bd);
-        const mat = houseMaterials[Math.floor(rand * houseMaterials.length)];
-        const houseMesh = new THREE.Mesh(houseGeo, mat);
-        houseMesh.position.set(posX, height / 2, posZ);
-        houseMesh.rotation.y = -gridAngle;
-        houseMesh.castShadow = true;
-        houseMesh.receiveShadow = true;
-        group.add(houseMesh);
+          // Andares variados (1 a 3 pavimentos)
+          let floors = 1;
+          if (rand > 0.40) floors = 2;
+          if (rand > 0.82) floors = 3;
+          const height = floors * 2.8;
 
-        // Laje de concreto
-        const slabGeo = new THREE.BoxGeometry(bw + 0.35, 0.25, bd + 0.35);
-        const slabMesh = new THREE.Mesh(slabGeo, this.materials.slabConcrete);
-        slabMesh.position.set(posX, height + 0.125, posZ);
-        slabMesh.rotation.y = -gridAngle;
-        slabMesh.castShadow = true;
-        group.add(slabMesh);
+          // Casa colada (dimensões exatas bw x bd para encaixar perfeitamente)
+          const houseGeo = new THREE.BoxGeometry(bw, height, bd);
+          // Alternar materiais entre vizinhos para destacar cada barraco colado
+          const mat = houseMaterials[(houseIndex + Math.floor(rand * 3)) % houseMaterials.length];
+          const houseMesh = new THREE.Mesh(houseGeo, mat);
+          houseMesh.position.set(posX, height / 2, posZ);
+          houseMesh.rotation.y = -gridAngle;
+          houseMesh.castShadow = true;
+          houseMesh.receiveShadow = true;
+          group.add(houseMesh);
 
-        // Caixa d'água azul na laje (60% das casas)
-        if (rand2 > 0.4) {
-          const tankGeo = new THREE.CylinderGeometry(0.7, 0.62, 0.95, 10);
-          const tankMesh = new THREE.Mesh(tankGeo, this.materials.waterTankBlue);
-          tankMesh.position.set(
-            posX + (rand - 0.5) * 1.5,
-            height + 0.25 + 0.475,
-            posZ + (rand2 - 0.5) * 1.5
-          );
-          tankMesh.castShadow = true;
-          group.add(tankMesh);
+          // Laje de concreto
+          const slabGeo = new THREE.BoxGeometry(bw + 0.1, 0.2, bd + 0.1);
+          const slabMesh = new THREE.Mesh(slabGeo, this.materials.slabConcrete);
+          slabMesh.position.set(posX, height + 0.1, posZ);
+          slabMesh.rotation.y = -gridAngle;
+          slabMesh.castShadow = true;
+          group.add(slabMesh);
+
+          // Caixa d'água azul na laje (em ~65% dos barracos)
+          if (rand2 > 0.35) {
+            const tankGeo = new THREE.CylinderGeometry(0.7, 0.62, 0.95, 10);
+            const tankMesh = new THREE.Mesh(tankGeo, this.materials.waterTankBlue);
+            tankMesh.position.set(
+              posX + (rand - 0.5) * (bw * 0.45),
+              height + 0.2 + 0.475,
+              posZ + (rand2 - 0.5) * (bd * 0.45)
+            );
+            tankMesh.castShadow = true;
+            group.add(tankMesh);
+          }
+
+          // Registrar caixa AABB local para colisão precisa e vielas livres
+          this.barracoBoxes.push({
+            uCenter,
+            vCenter,
+            halfW: bw / 2,
+            halfD: bd / 2
+          });
         }
-
-        // Colisor do barraco
-        this.barracoColliders.push({
-          x: posX,
-          z: posZ,
-          radius: Math.min(bw, bd) * 0.54
-        });
       }
     }
 
@@ -682,10 +699,23 @@ export class SaoRemoMap {
       }
     }
 
-    // Colisão individual com os barracos (o jogador caminha pelas vielas entre eles)
-    for (const b of this.barracoColliders) {
-      if (Math.hypot(x - b.x, z - b.z) < b.radius) {
-        return true;
+    // Colisão precisa com os barracos colados (o jogador caminha livremente pelas vielas)
+    if (this.barracoArea && this.barracoBoxes.length > 0) {
+      const diffX = x - this.barracoArea.p0.x;
+      const diffZ = z - this.barracoArea.p0.y;
+      const u = diffX * this.barracoArea.dirU.x + diffZ * this.barracoArea.dirU.y;
+      const v = diffX * this.barracoArea.dirV.x + diffZ * this.barracoArea.dirV.y;
+
+      if (u >= 0 && u <= this.barracoArea.lenU && v >= 0 && v <= this.barracoArea.lenV) {
+        const playerRadius = 0.55;
+        for (const b of this.barracoBoxes) {
+          if (
+            Math.abs(u - b.uCenter) < (b.halfW + playerRadius) &&
+            Math.abs(v - b.vCenter) < (b.halfD + playerRadius)
+          ) {
+            return true;
+          }
+        }
       }
     }
 
