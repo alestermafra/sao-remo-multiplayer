@@ -543,6 +543,20 @@ export class SaoRemoMap {
     const bd = 5.0;
     const halfH = 2.5;
 
+    // Eixo principal de alinhamento com a malha das ruas (Rua Baltazar Rabelo e Av. São Remo)
+    let dirU = { x: 0.80285, z: -0.59618 };
+    const baltazarSeg = this.streetSegments.find(s => s.name && s.name.includes('Baltazar'));
+    if (baltazarSeg) {
+      const bdx = baltazarSeg.p2.x - baltazarSeg.p1.x;
+      const bdz = baltazarSeg.p2.y - baltazarSeg.p1.y;
+      const blen = Math.hypot(bdx, bdz);
+      if (blen > 1) {
+        dirU = { x: bdx / blen, z: bdz / blen };
+      }
+    }
+    const dirV = { x: -dirU.z, z: dirU.x };
+    const gridAngle = Math.atan2(dirU.z, dirU.x);
+
     let seed = 91;
     const pseudoRandom = () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -552,20 +566,25 @@ export class SaoRemoMap {
     const visited = new Set();
     const houses = [];
 
-    // Gerar casas em grade unificada global de 5m x 5m (100% coladas, sem vãos internos)
+    // Gerar casas na grade alinhada às ruas (de frente para as vias e vielas, sem ficar na diagonal)
     barracoPolygons.forEach(pts => {
-      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
       pts.forEach(p => {
-        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-        if (p.y < minZ) minZ = p.y; if (p.y > maxZ) maxZ = p.y;
+        const u = p.x * dirU.x + p.y * dirU.z;
+        const v = p.x * dirV.x + p.y * dirV.z;
+        if (u < minU) minU = u; if (u > maxU) maxU = u;
+        if (v < minV) minV = v; if (v > maxV) maxV = v;
       });
 
-      const startX = Math.floor(minX / bw) * bw + halfH;
-      const startZ = Math.floor(minZ / bd) * bd + halfH;
+      const startU = Math.floor(minU / bw) * bw + halfH;
+      const startV = Math.floor(minV / bd) * bd + halfH;
 
-      for (let x = startX; x <= maxX; x += bw) {
-        for (let z = startZ; z <= maxZ; z += bd) {
-          const key = Math.round(x) + '_' + Math.round(z);
+      for (let u = startU; u <= maxU; u += bw) {
+        for (let v = startV; v <= maxV; v += bd) {
+          const x = u * dirU.x + v * dirV.x;
+          const z = u * dirU.z + v * dirV.z;
+
+          const key = Math.round(u) + '_' + Math.round(v);
           if (visited.has(key)) continue;
           if (!this.isPointInPolygon(x, z, pts)) continue;
 
@@ -579,12 +598,12 @@ export class SaoRemoMap {
           }
           if (inLandmark) continue;
 
-          // Vértices dos 4 cantos para conferência de limites
+          // Vértices dos 4 cantos rotacionados no eixo da rua
           const corners = [
-            { x: x + halfH, z: z + halfH },
-            { x: x - halfH, z: z + halfH },
-            { x: x + halfH, z: z - halfH },
-            { x: x - halfH, z: z - halfH }
+            { x: x + dirU.x * halfH + dirV.x * halfH, z: z + dirU.z * halfH + dirV.z * halfH },
+            { x: x - dirU.x * halfH + dirV.x * halfH, z: z - dirU.z * halfH + dirV.z * halfH },
+            { x: x + dirU.x * halfH - dirV.x * halfH, z: z + dirU.z * halfH - dirV.z * halfH },
+            { x: x - dirU.x * halfH - dirV.x * halfH, z: z - dirU.z * halfH - dirV.z * halfH }
           ];
 
           // 2. Não invadir ruas nem calçadas
@@ -643,21 +662,23 @@ export class SaoRemoMap {
           houses.push({
             x,
             z,
+            u,
+            v,
             key,
             floors,
             height: floors * 2.8,
             color,
             hasTank,
-            tankOffset: {
-              x: (rand - 0.5) * (bw * 0.45),
-              z: (rand2 - 0.5) * (bd * 0.45)
+            tankLocalOffset: {
+              u: (rand - 0.5) * (bw * 0.4),
+              v: (rand2 - 0.5) * (bd * 0.4)
             }
           });
         }
       }
     });
 
-    // 3. Renderização com THREE.InstancedMesh (5 draw calls para todos os barracos)
+    // 3. Renderização com THREE.InstancedMesh alinhada no ângulo das ruas
     const houses1 = houses.filter(h => h.floors === 1);
     const houses2 = houses.filter(h => h.floors === 2);
     const houses3 = houses.filter(h => h.floors === 3);
@@ -674,7 +695,7 @@ export class SaoRemoMap {
       for (let i = 0; i < houseList.length; i++) {
         const h = houseList[i];
         dummy.position.set(h.x, floorHeight / 2, h.z);
-        dummy.rotation.set(0, 0, 0);
+        dummy.rotation.set(0, -gridAngle, 0);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
         mesh.setColorAt(i, h.color);
@@ -691,7 +712,7 @@ export class SaoRemoMap {
     if (mesh2) group.add(mesh2);
     if (mesh3) group.add(mesh3);
 
-    // Lajes de concreto
+    // Lajes de concreto no topo (alinhadas à rotação da casa)
     if (houses.length > 0) {
       const slabGeo = new THREE.BoxGeometry(bw, 0.2, bd);
       const slabMesh = new THREE.InstancedMesh(slabGeo, this.materials.slabConcrete, houses.length);
@@ -700,7 +721,7 @@ export class SaoRemoMap {
       for (let i = 0; i < houses.length; i++) {
         const h = houses[i];
         dummy.position.set(h.x, h.height + 0.1, h.z);
-        dummy.rotation.set(0, 0, 0);
+        dummy.rotation.set(0, -gridAngle, 0);
         dummy.updateMatrix();
         slabMesh.setMatrixAt(i, dummy.matrix);
       }
@@ -708,19 +729,21 @@ export class SaoRemoMap {
       group.add(slabMesh);
     }
 
-    // Caixas d'água azuis
+    // Caixas d'água azuis no teto
     if (tankHouses.length > 0) {
       const tankGeo = new THREE.CylinderGeometry(0.7, 0.62, 0.95, 10);
       const tankMesh = new THREE.InstancedMesh(tankGeo, this.materials.waterTankBlue, tankHouses.length);
       tankMesh.castShadow = true;
       for (let i = 0; i < tankHouses.length; i++) {
         const h = tankHouses[i];
+        const tankOffsetX = h.tankLocalOffset.u * dirU.x + h.tankLocalOffset.v * dirV.x;
+        const tankOffsetZ = h.tankLocalOffset.u * dirU.z + h.tankLocalOffset.v * dirV.z;
         dummy.position.set(
-          h.x + h.tankOffset.x,
+          h.x + tankOffsetX,
           h.height + 0.2 + 0.475,
-          h.z + h.tankOffset.z
+          h.z + tankOffsetZ
         );
-        dummy.rotation.set(0, 0, 0);
+        dummy.rotation.set(0, -gridAngle, 0);
         dummy.updateMatrix();
         tankMesh.setMatrixAt(i, dummy.matrix);
       }
@@ -731,10 +754,10 @@ export class SaoRemoMap {
     // 4. Cadastrar casas de borda no spatial grid para colisões instantâneas (<0.001ms)
     houses.forEach(h => {
       const neighbors = [
-        Math.round(h.x + bw) + '_' + Math.round(h.z),
-        Math.round(h.x - bw) + '_' + Math.round(h.z),
-        Math.round(h.x) + '_' + Math.round(h.z + bd),
-        Math.round(h.x) + '_' + Math.round(h.z - bd)
+        Math.round(h.u + bw) + '_' + Math.round(h.v),
+        Math.round(h.u - bw) + '_' + Math.round(h.v),
+        Math.round(h.u) + '_' + Math.round(h.v + bd),
+        Math.round(h.u) + '_' + Math.round(h.v - bd)
       ];
       const isBoundary = neighbors.some(n => !visited.has(n));
       if (isBoundary) {
