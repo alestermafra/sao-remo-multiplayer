@@ -142,7 +142,6 @@ export class SaoRemoMap {
 
   buildStreetsFromGeoJSON() {
     const roadGroup = new THREE.Group();
-    const linesGroup = new THREE.Group();
     const curbGroup = new THREE.Group();
     const sidewalkGroup = new THREE.Group();
 
@@ -277,32 +276,12 @@ export class SaoRemoMap {
         disc2.position.set(p2.x, 0.065, p2.y);
         disc2.receiveShadow = true;
         roadGroup.add(disc2);
-
-        // 4. Faixas amarelas tracejadas
-        const dashLen = 3.5;
-        const gapLen = 3.0;
-        const cycle = dashLen + gapLen;
-        const numDashes = Math.floor(len / cycle);
-        const angle = Math.atan2(dz, dx);
-
-        for (let d = 0; d < numDashes; d++) {
-          const cx = p1.x + ux * (d * cycle + dashLen / 2);
-          const cz = p1.y + uz * (d * cycle + dashLen / 2);
-
-          const dashGeo = new THREE.PlaneGeometry(dashLen, 0.32);
-          const dashMesh = new THREE.Mesh(dashGeo, this.materials.lineYellow);
-          dashMesh.rotation.x = -Math.PI / 2;
-          dashMesh.rotation.z = -angle;
-          dashMesh.position.set(cx, 0.08, cz);
-          linesGroup.add(dashMesh);
-        }
       }
     });
 
     this.scene.add(sidewalkGroup);
     this.scene.add(curbGroup);
     this.scene.add(roadGroup);
-    this.scene.add(linesGroup);
   }
 
   buildBuildingsFromGeoJSON() {
