@@ -107,7 +107,7 @@
       background: rgba(255, 255, 255, 0.12);
       border: 2px dashed rgba(255, 255, 255, 0.35);
       z-index: 15;
-      display: flex;
+      display: none; /* Oculto por padrão no PC */
       justify-content: center;
       align-items: center;
       touch-action: none;
@@ -128,10 +128,25 @@
       position: absolute;
       bottom: 26px;
       right: 28px;
-      display: flex;
+      display: none; /* Oculto por padrão no PC */
       gap: 16px;
       align-items: center;
       z-index: 15;
+    }
+
+    /* Exibir controles de toque apenas em telas touch / celulares */
+    @media (pointer: coarse) {
+      #touch-joystick-zone {
+        display: flex;
+      }
+      #touch-actions-zone {
+        display: flex;
+      }
+    }
+
+    body.has-touch #touch-joystick-zone,
+    body.has-touch #touch-actions-zone {
+      display: flex;
     }
 
     .touch-btn {

@@ -90,6 +90,11 @@ export class InputManager {
   }
 
   initTouch() {
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (isTouch && document.body) {
+      document.body.classList.add('has-touch');
+    }
+
     const pad = document.getElementById('touch-joystick-zone');
     const knob = document.getElementById('touch-joystick-knob');
     if (!pad || !knob) return;
