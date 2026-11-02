@@ -904,43 +904,215 @@ export class SaoRemoMap {
   }
 
   buildSoccerFieldAccents(pts, cX, cZ, isDirt) {
+    if (pts.length < 4) return;
     const group = new THREE.Group();
 
-    // Linha limite branca
+    // 1. Linha de contorno externa
     const points3D = pts.map(p => new THREE.Vector3(p.x, 0.03, p.y));
     const borderGeo = new THREE.BufferGeometry().setFromPoints(points3D);
     const borderMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
     const border = new THREE.Line(borderGeo, borderMat);
     group.add(border);
 
-    // Traves de futebol
-    const makeGoal = (gx, gz, rot) => {
+    // 2. Determinar orientação do campo e as duas linhas de fundo
+    const d01 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const d12 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+
+    let pA1, pA2, pB1, pB2;
+    if (d01 <= d12) {
+      pA1 = pts[0]; pA2 = pts[1];
+      pB1 = pts[3]; pB2 = pts[2];
+    } else {
+      pA1 = pts[1]; pA2 = pts[2];
+      pB1 = pts[0]; pB2 = pts[3];
+    }
+
+    const midA = { x: (pA1.x + pA2.x) / 2, y: (pA1.y + pA2.y) / 2 };
+    const midB = { x: (pB1.x + pB2.x) / 2, y: (pB1.y + pB2.y) / 2 };
+
+    const dirA = { x: midB.x - midA.x, y: midB.y - midA.y };
+    const fieldLen = Math.hypot(dirA.x, dirA.y);
+    if (fieldLen < 1) return;
+    dirA.x /= fieldLen;
+    dirA.y /= fieldLen;
+    const dirB = { x: -dirA.x, y: -dirA.y };
+
+    // Ângulo de rotação da trave (para olhar em direção ao centro do campo)
+    const rotA = Math.atan2(dirA.x, dirA.y);
+    const rotB = Math.atan2(dirB.x, dirB.y);
+
+    // 3. Linha de meio-campo
+    const midSide1 = { x: (pA1.x + pB1.x) / 2, y: (pA1.y + pB1.y) / 2 };
+    const midSide2 = { x: (pA2.x + pB2.x) / 2, y: (pA2.y + pB2.y) / 2 };
+    const centerLineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(midSide1.x, 0.03, midSide1.y),
+      new THREE.Vector3(midSide2.x, 0.03, midSide2.y)
+    ]);
+    const centerLine = new THREE.Line(centerLineGeo, borderMat);
+    group.add(centerLine);
+
+    // 4. Círculo central
+    const centerRadius = isDirt ? 7.0 : 3.2;
+    const ringGeo = new THREE.RingGeometry(centerRadius - 0.08, centerRadius + 0.08, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMesh = new THREE.Mesh(ringGeo, this.materials.lineWhite);
+    ringMesh.position.set(cX, 0.032, cZ);
+    group.add(ringMesh);
+
+    // Ponto central
+    const dotGeo = new THREE.CircleGeometry(0.3, 16);
+    dotGeo.rotateX(-Math.PI / 2);
+    const dotMesh = new THREE.Mesh(dotGeo, this.materials.lineWhite);
+    dotMesh.position.set(cX, 0.033, cZ);
+    group.add(dotMesh);
+
+    // 5. Linhas das áreas de gol (grandes áreas)
+    const areaWidth = isDirt ? 20.0 : 7.0;
+    const areaDepth = isDirt ? 11.0 : 4.0;
+    const makePenaltyBox = (mid, dir, p1, p2) => {
+      const vec = { x: p2.x - p1.x, y: p2.y - p1.y };
+      const vLen = Math.hypot(vec.x, vec.y);
+      vec.x /= vLen; vec.y /= vLen;
+
+      const halfAW = areaWidth / 2;
+      const c1 = new THREE.Vector3(mid.x - vec.x * halfAW, 0.03, mid.y - vec.y * halfAW);
+      const c2 = new THREE.Vector3(c1.x + dir.x * areaDepth, 0.03, c1.z + dir.y * areaDepth);
+      const c3 = new THREE.Vector3(mid.x + vec.x * halfAW + dir.x * areaDepth, 0.03, mid.y + vec.y * halfAW + dir.y * areaDepth);
+      const c4 = new THREE.Vector3(mid.x + vec.x * halfAW, 0.03, mid.y + vec.y * halfAW);
+
+      const boxGeo = new THREE.BufferGeometry().setFromPoints([c1, c2, c3, c4]);
+      const boxLine = new THREE.Line(boxGeo, borderMat);
+      group.add(boxLine);
+    };
+
+    makePenaltyBox(midA, dirA, pA1, pA2);
+    makePenaltyBox(midB, dirB, pB1, pB2);
+
+    // 6. Modelo 3D completo das traves com rede e tabela de basquete (para quadra)
+    const goalWidth = isDirt ? 6.4 : 3.2;
+    const goalHeight = isDirt ? 2.4 : 2.0;
+    const goalDepth = isDirt ? 1.8 : 1.1;
+
+    const createGoalModel = (hasBackboard) => {
       const goalGroup = new THREE.Group();
-      const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.2, 6);
-      const crossbarGeo = new THREE.CylinderGeometry(0.08, 0.08, 4.0, 6);
+      const r = 0.07;
+      const postMat = this.materials.metalGoal;
 
-      const p1 = new THREE.Mesh(postGeo, this.materials.metalGoal);
-      p1.position.set(-2.0, 1.1, 0);
+      // Postes verticais
+      const postGeo = new THREE.CylinderGeometry(r, r, goalHeight, 8);
+      const post1 = new THREE.Mesh(postGeo, postMat);
+      post1.position.set(-goalWidth / 2, goalHeight / 2, 0);
+      post1.castShadow = true;
 
-      const p2 = new THREE.Mesh(postGeo, this.materials.metalGoal);
-      p2.position.set(2.0, 1.1, 0);
+      const post2 = new THREE.Mesh(postGeo, postMat);
+      post2.position.set(goalWidth / 2, goalHeight / 2, 0);
+      post2.castShadow = true;
 
-      const bar = new THREE.Mesh(crossbarGeo, this.materials.metalGoal);
+      // Travessão superior
+      const barGeo = new THREE.CylinderGeometry(r, r, goalWidth, 8);
+      const bar = new THREE.Mesh(barGeo, postMat);
       bar.rotation.z = Math.PI / 2;
-      bar.position.set(0, 2.2, 0);
+      bar.position.set(0, goalHeight, 0);
+      bar.castShadow = true;
 
-      goalGroup.add(p1, p2, bar);
-      goalGroup.position.set(gx, 0, gz);
-      goalGroup.rotation.y = rot;
+      // Trilhos de base no chão (indo para trás)
+      const baseRailGeo = new THREE.CylinderGeometry(r * 0.8, r * 0.8, goalDepth, 6);
+      const r1 = new THREE.Mesh(baseRailGeo, postMat);
+      r1.rotation.x = Math.PI / 2;
+      r1.position.set(-goalWidth / 2, r, -goalDepth / 2);
+
+      const r2 = new THREE.Mesh(baseRailGeo, postMat);
+      r2.rotation.x = Math.PI / 2;
+      r2.position.set(goalWidth / 2, r, -goalDepth / 2);
+
+      // Barra traseira no chão
+      const backBarGeo = new THREE.CylinderGeometry(r * 0.8, r * 0.8, goalWidth, 6);
+      const backBar = new THREE.Mesh(backBarGeo, postMat);
+      backBar.rotation.z = Math.PI / 2;
+      backBar.position.set(0, r, -goalDepth);
+
+      // Suportes inclinados de trás
+      const slantLen = Math.hypot(goalHeight, goalDepth);
+      const slantAngle = Math.atan2(goalDepth, goalHeight);
+      const slantGeo = new THREE.CylinderGeometry(r * 0.7, r * 0.7, slantLen, 6);
+
+      const s1 = new THREE.Mesh(slantGeo, postMat);
+      s1.rotation.x = -slantAngle;
+      s1.position.set(-goalWidth / 2, goalHeight / 2, -goalDepth / 2);
+
+      const s2 = new THREE.Mesh(slantGeo, postMat);
+      s2.rotation.x = -slantAngle;
+      s2.position.set(goalWidth / 2, goalHeight / 2, -goalDepth / 2);
+
+      // Rede traseira (tecido vazado/wireframe branco)
+      const netMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide
+      });
+
+      const netBackGeo = new THREE.PlaneGeometry(goalWidth, slantLen);
+      const netBack = new THREE.Mesh(netBackGeo, netMat);
+      netBack.rotation.x = -slantAngle;
+      netBack.position.set(0, goalHeight / 2, -goalDepth / 2);
+
+      // Redes laterais triangulares
+      const leftTriGeo = new THREE.BufferGeometry();
+      leftTriGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        -goalWidth / 2, 0, 0,
+        -goalWidth / 2, goalHeight, 0,
+        -goalWidth / 2, 0, -goalDepth
+      ]), 3));
+      leftTriGeo.computeVertexNormals();
+      const leftTri = new THREE.Mesh(leftTriGeo, netMat);
+
+      const rightTriGeo = new THREE.BufferGeometry();
+      rightTriGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        goalWidth / 2, 0, 0,
+        goalWidth / 2, goalHeight, 0,
+        goalWidth / 2, 0, -goalDepth
+      ]), 3));
+      rightTriGeo.computeVertexNormals();
+      const rightTri = new THREE.Mesh(rightTriGeo, netMat);
+
+      goalGroup.add(post1, post2, bar, r1, r2, backBar, s1, s2, netBack, leftTri, rightTri);
+
+      // Tabela de basquete conjugada em cima da trave de quadra poliesportiva
+      if (hasBackboard) {
+        const boardPoleGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.4, 6);
+        const boardPole = new THREE.Mesh(boardPoleGeo, postMat);
+        boardPole.position.set(0, goalHeight + 0.7, -0.2);
+
+        const boardGeo = new THREE.BoxGeometry(1.4, 0.9, 0.05);
+        const boardMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+        const board = new THREE.Mesh(boardGeo, boardMat);
+        board.position.set(0, goalHeight + 1.25, 0.05);
+
+        // Aro de basquete laranja
+        const rimGeo = new THREE.TorusGeometry(0.24, 0.03, 8, 16);
+        rimGeo.rotateX(Math.PI / 2);
+        const rimMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+        const rim = new THREE.Mesh(rimGeo, rimMat);
+        rim.position.set(0, goalHeight + 1.05, 0.32);
+
+        goalGroup.add(boardPole, board, rim);
+      }
+
       return goalGroup;
     };
 
-    if (pts.length >= 4) {
-      const g1 = makeGoal(pts[0].x * 0.9 + pts[1].x * 0.1, pts[0].y * 0.9 + pts[1].y * 0.1, 0);
-      const g2 = makeGoal(pts[2].x * 0.9 + pts[3].x * 0.1, pts[2].y * 0.9 + pts[3].y * 0.1, Math.PI);
-      group.add(g1, g2);
-    }
+    // Criar e posicionar as duas traves perfeitamente nas linhas de fundo
+    const g1 = createGoalModel(!isDirt);
+    g1.position.set(midA.x, 0, midA.y);
+    g1.rotation.y = rotA;
 
+    const g2 = createGoalModel(!isDirt);
+    g2.position.set(midB.x, 0, midB.y);
+    g2.rotation.y = rotB;
+
+    group.add(g1, g2);
     this.scene.add(group);
   }
 
