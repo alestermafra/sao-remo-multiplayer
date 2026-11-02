@@ -40,14 +40,14 @@ const players = new Map();
 io.on('connection', (socket) => {
   console.log(`[Player Connected] ${socket.id}`);
 
-  // Create initial player state on Rua Baltazar Rabelo (from mapa.geojson)
+  // Create initial player state no coração da Favela São Remo (Rua Grande Arrozal)
   const randomNames = ['CriaDaSãoRemo', 'Morador_Rabelo', 'RayDaQuebrada', 'DJ_Laje', 'USP_Vizinho', 'Pedrão', 'Jhow'];
   const initialPlayer = {
     id: socket.id,
     name: randomNames[Math.floor(Math.random() * randomNames.length)],
-    x: -67.8 + (Math.random() - 0.5) * 3,
+    x: 15.0 + (Math.random() - 0.5) * 3,
     y: 0,
-    z: 243.7 + (Math.random() - 0.5) * 3,
+    z: -28.0 + (Math.random() - 0.5) * 3,
     rotationY: 0,
     avatarColor: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
     isGrounded: true

@@ -14,9 +14,9 @@ class Game {
     // Map: Ruas da São Remo geradas do mapa.geojson
     this.map = new SaoRemoMap(this.scene);
 
-    // Spawn do jogador no início da Rua Baltazar Rabelo
-    const spawnX = -67.8;
-    const spawnZ = 243.7;
+    // Spawn do jogador no coração da Favela São Remo (Rua Grande Arrozal / miolo dos barracos)
+    const spawnX = 15.0;
+    const spawnZ = -28.0;
 
     // Network & Local Player
     this.network = new NetworkManager(this.scene);
@@ -55,7 +55,7 @@ class Game {
       0.1,
       1000
     );
-    this.camera.position.set(-67.8, 4, 252);
+    this.camera.position.set(15.0, 4, -20.0);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
