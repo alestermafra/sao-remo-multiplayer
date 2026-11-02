@@ -15,8 +15,7 @@ export class SaoRemoMap {
     // Map structures
     this.streetSegments = [];
     this.solidColliders = [];
-    this.barracoBoxes = [];
-    this.barracoArea = null;
+    this.barracoColliders = [];
 
     this.buildGround();
     this.buildStreetsFromGeoJSON();
@@ -418,9 +417,6 @@ export class SaoRemoMap {
     groundMesh.receiveShadow = true;
     group.add(groundMesh);
 
-    // O quarteirão inteiro de barracos é um bloco maciço colado (colisor sólido)
-    this.solidColliders.push(pts);
-
     // Orientação do quarteirão para preenchimento contínuo e colado
     const p0 = pts[0], p1 = pts[1], p3 = pts[3];
     const uX = (p1.x - p0.x), uY = (p1.y - p0.y);
@@ -441,9 +437,10 @@ export class SaoRemoMap {
       this.materials.whiteWall
     ];
 
-    // Dimensões do barraco: passo de grade = tamanho do barraco (100% colados, sem vão nem vielas)
+    // Dimensões do barraco colado
     const bw = 5.0;
     const bd = 5.0;
+    const halfH = 2.5;
 
     let seed = 91;
     const pseudoRandom = () => {
@@ -453,14 +450,43 @@ export class SaoRemoMap {
 
     let houseIndex = 0;
 
-    for (let u = 0; u <= lenU - bw; u += bw) {
-      for (let v = 0; v <= lenV - bd; v += bd) {
+    for (let u = 0.5; u <= lenU - bw; u += bw) {
+      for (let v = 0.5; v <= lenV - bd; v += bd) {
         const uCenter = u + (bw / 2);
         const vCenter = v + (bd / 2);
         const posX = p0.x + dirU.x * uCenter + dirV.x * vCenter;
         const posZ = p0.y + dirU.y * uCenter + dirV.y * vCenter;
 
         if (!this.isPointInPolygon(posX, posZ, pts)) continue;
+
+        // Vértices dos 4 cantos do barraco para garantir que nenhum canto invade a rua/calçada
+        const corners = [
+          { x: posX + dirU.x * halfH + dirV.x * halfH, z: posZ + dirU.y * halfH + dirV.y * halfH },
+          { x: posX - dirU.x * halfH + dirV.x * halfH, z: posZ - dirU.y * halfH + dirV.y * halfH },
+          { x: posX + dirU.x * halfH - dirV.x * halfH, z: posZ + dirU.y * halfH - dirV.y * halfH },
+          { x: posX - dirU.x * halfH - dirV.x * halfH, z: posZ - dirU.y * halfH - dirV.y * halfH }
+        ];
+
+        let hitsStreet = false;
+        for (const seg of this.streetSegments) {
+          const segHalfW = (seg.streetWidth / 2) + 1.2; // Largura da rua + calçada
+          const dCenter = this.pointToSegmentDistance(posX, posZ, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+          if (dCenter < segHalfW + 2.8) {
+            hitsStreet = true;
+            break;
+          }
+          for (const c of corners) {
+            const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+            if (dCorner < segHalfW + 0.6) {
+              hitsStreet = true;
+              break;
+            }
+          }
+          if (hitsStreet) break;
+        }
+
+        // Se invadir a rua ou calçada, pula
+        if (hitsStreet) continue;
 
         houseIndex++;
         const rand = pseudoRandom();
@@ -502,6 +528,13 @@ export class SaoRemoMap {
           tankMesh.castShadow = true;
           group.add(tankMesh);
         }
+
+        // Registrar colisor do barraco para o jogador colidir na parede externa
+        this.barracoColliders.push({
+          x: posX,
+          z: posZ,
+          radius: 2.8
+        });
       }
     }
 
@@ -671,9 +704,21 @@ export class SaoRemoMap {
     // Map radius
     if (Math.hypot(x, z) > 550) return true;
 
-    // Colisores sólidos (Roldão, Circo e Bloco maciço de Barracos)
+    // Colisores sólidos poligonais (Roldão, Circo, etc.)
     for (const poly of this.solidColliders) {
       if (this.isPointInPolygon(x, z, poly)) {
+        return true;
+      }
+    }
+
+    // Colisores individuais dos barracos colados
+    for (let i = 0; i < this.barracoColliders.length; i++) {
+      const b = this.barracoColliders[i];
+      const dx = x - b.x;
+      if (dx > 2.8 || dx < -2.8) continue;
+      const dz = z - b.z;
+      if (dz > 2.8 || dz < -2.8) continue;
+      if (dx * dx + dz * dz < 2.8 * 2.8) {
         return true;
       }
     }
