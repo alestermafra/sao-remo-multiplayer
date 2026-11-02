@@ -136,10 +136,7 @@ class Game {
 
     // Chat open
     this.input.onChatOpen = () => {
-      const chatContainer = document.getElementById('chat-container');
-      const input = document.getElementById('chat-input');
-      if (chatContainer) chatContainer.classList.remove('minimized');
-      if (input) input.focus();
+      this.chatUI.openInput();
     };
   }
 
@@ -235,6 +232,12 @@ class Game {
 
     // Update Current Street Name HUD
     this.updateStreetIndicator();
+
+    // Update Discreet Coordinates Badge
+    const coordsEl = document.getElementById('coords-display');
+    if (coordsEl) {
+      coordsEl.textContent = `X: ${p.position.x.toFixed(1)} | Z: ${p.position.z.toFixed(1)}`;
+    }
   }
 
   updateStreetIndicator() {

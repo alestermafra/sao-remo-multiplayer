@@ -5,10 +5,10 @@ export class ChatUI {
 
     this.container = document.getElementById('chat-container');
     this.messagesList = document.getElementById('chat-messages');
+    this.inputBar = document.getElementById('chat-input-bar');
     this.input = document.getElementById('chat-input');
     this.sendBtn = document.getElementById('chat-send-btn');
     this.toggleBtn = document.getElementById('btn-chat-toggle');
-    this.quickChips = document.querySelectorAll('.chat-chip');
 
     this.init();
   }
@@ -19,42 +19,65 @@ export class ChatUI {
       this.input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           this.sendMessage();
+        } else if (e.key === 'Escape') {
+          this.closeInput();
         }
       });
     }
 
     if (this.toggleBtn) {
-      this.toggleBtn.addEventListener('click', () => {
-        this.container.classList.toggle('minimized');
-        if (!this.container.classList.contains('minimized')) {
-          this.input.focus();
+      this.toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleInput();
+      });
+    }
+
+    // Clicking on messages area on mobile can also open input
+    if (this.container) {
+      this.container.addEventListener('click', () => {
+        if (this.inputBar && this.inputBar.style.display === 'none') {
+          this.openInput();
         }
       });
     }
 
-    this.quickChips.forEach(chip => {
-      chip.addEventListener('click', () => {
-        const text = chip.getAttribute('data-msg');
-        if (text) {
-          this.network.sendChat(text);
-          if (this.player) this.player.showSpeech(text);
-        }
-      });
-    });
-
-    // Nickname change button
+    // Nickname change button in HUD
     const nickBtn = document.getElementById('change-nick-btn');
     if (nickBtn) {
       nickBtn.addEventListener('click', () => {
         const newNick = prompt('Digite seu novo apelido na São Remo:', this.player ? this.player.name : '');
         if (newNick && newNick.trim()) {
-          const clean = newNick.trim().slice(0, 15);
+          const clean = newNick.trim().slice(0, 16);
           if (this.player) this.player.setName(clean);
-          this.network.socket.emit('change_name', clean);
+          this.network.sendRename(clean);
           const nameEl = document.getElementById('player-name-display');
           if (nameEl) nameEl.textContent = clean;
         }
       });
+    }
+  }
+
+  openInput() {
+    if (this.inputBar) {
+      this.inputBar.style.display = 'flex';
+      if (this.input) {
+        this.input.focus();
+      }
+    }
+  }
+
+  closeInput() {
+    if (this.inputBar) {
+      this.inputBar.style.display = 'none';
+      if (this.input) this.input.blur();
+    }
+  }
+
+  toggleInput() {
+    if (this.inputBar && this.inputBar.style.display !== 'none') {
+      this.closeInput();
+    } else {
+      this.openInput();
     }
   }
 
@@ -65,8 +88,8 @@ export class ChatUI {
       this.network.sendChat(text);
       if (this.player) this.player.showSpeech(text);
       this.input.value = '';
-      this.input.blur();
     }
+    this.closeInput();
   }
 
   addMessage(msg) {
@@ -84,10 +107,9 @@ export class ChatUI {
     this.messagesList.appendChild(item);
     this.messagesList.scrollTop = this.messagesList.scrollHeight;
 
-    // Remove oldest if more than 30
-    if (this.messagesList.children.length > 30) {
+    // Keep only last 8 messages in discreet log
+    while (this.messagesList.children.length > 8) {
       this.messagesList.removeChild(this.messagesList.children[0]);
     }
   }
 }
-
