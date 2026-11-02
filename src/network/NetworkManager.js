@@ -100,4 +100,10 @@ export class NetworkManager {
       this.socket.emit('chat_message', text);
     }
   }
+
+  sendRename(newName) {
+    if (this.socket) {
+      this.socket.emit('change_name', newName);
+    }
+  }
 }

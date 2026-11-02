@@ -93,6 +93,31 @@ class Game {
   }
 
   bindEvents() {
+    // Modal inicial: pedir nome antes de começar a se mexer
+    const loginModal = document.getElementById('login-modal');
+    const loginForm = document.getElementById('login-form');
+    const nameInput = document.getElementById('login-name-input');
+    const nameDisplay = document.getElementById('player-name-display');
+
+    if (loginForm && loginModal && nameInput) {
+      loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const chosenName = nameInput.value.trim().slice(0, 16);
+        if (chosenName) {
+          this.player.setName(chosenName);
+          if (nameDisplay) nameDisplay.textContent = chosenName;
+          this.network.sendRename(chosenName);
+
+          // Libera os controles e fecha o modal
+          this.input.enabled = true;
+          loginModal.style.display = 'none';
+
+          // Mensagem de boas-vindas no chat
+          this.player.showSpeech(`Salve! Cheguei na São Remo.`);
+        }
+      });
+    }
+
     // Jump trigger (Space or Mobile Button)
     this.input.onJump = () => {
       this.player.jump();

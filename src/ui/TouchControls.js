@@ -5,6 +5,7 @@ export class InputManager {
     this.isSprinting = false;
     this.onJump = null;
     this.onChatOpen = null;
+    this.enabled = false; // Bloqueado até o jogador definir o nome
 
     this.joystickTouchId = null;
     this.joystickCenter = { x: 0, y: 0 };
@@ -16,11 +17,13 @@ export class InputManager {
 
   initKeyboard() {
     window.addEventListener('keydown', (e) => {
-      // Don't capture keys if typing in chat
+      // Don't capture keys if typing in modal or chat input
       if (document.activeElement && document.activeElement.tagName === 'INPUT') {
         if (e.key === 'Escape') document.activeElement.blur();
         return;
       }
+
+      if (!this.enabled) return;
 
       switch (e.code) {
         case 'KeyW':
@@ -54,6 +57,12 @@ export class InputManager {
 
     window.addEventListener('keyup', (e) => {
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      if (!this.enabled) {
+        this.forward = 0;
+        this.turn = 0;
+        this.isSprinting = false;
+        return;
+      }
 
       switch (e.code) {
         case 'KeyW':
@@ -86,6 +95,7 @@ export class InputManager {
     if (!pad || !knob) return;
 
     const handleStart = (e) => {
+      if (!this.enabled) return;
       e.preventDefault();
       const touch = e.changedTouches[0];
       this.joystickTouchId = touch.identifier;
@@ -98,6 +108,7 @@ export class InputManager {
     };
 
     const handleMove = (e) => {
+      if (!this.enabled) return;
       e.preventDefault();
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
@@ -131,6 +142,7 @@ export class InputManager {
 
     if (btnJump) {
       btnJump.addEventListener('touchstart', (e) => {
+        if (!this.enabled) return;
         e.preventDefault();
         if (this.onJump) this.onJump();
       });
@@ -138,6 +150,7 @@ export class InputManager {
 
     if (btnRun) {
       btnRun.addEventListener('touchstart', (e) => {
+        if (!this.enabled) return;
         e.preventDefault();
         this.forward = 1;
         this.isSprinting = true;
@@ -153,6 +166,7 @@ export class InputManager {
   }
 
   updateJoystick(clientX, clientY, knob) {
+    if (!this.enabled) return;
     const maxRadius = 45;
     const dx = clientX - this.joystickCenter.x;
     const dy = clientY - this.joystickCenter.y;
