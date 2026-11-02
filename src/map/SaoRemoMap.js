@@ -58,7 +58,11 @@ export class SaoRemoMap {
         side: THREE.DoubleSide
       }),
       sidewalk: new THREE.MeshLambertMaterial({
-        color: 0x6e7075,
+        color: 0xb5b8be, // Concreto de calçada claro e bem nítido
+        side: THREE.DoubleSide
+      }),
+      curb: new THREE.MeshLambertMaterial({
+        color: 0xe2e4e8, // Guia de meio-fio em pedra clara
         side: THREE.DoubleSide
       }),
       lineYellow: new THREE.MeshBasicMaterial({
@@ -139,6 +143,7 @@ export class SaoRemoMap {
   buildStreetsFromGeoJSON() {
     const roadGroup = new THREE.Group();
     const linesGroup = new THREE.Group();
+    const curbGroup = new THREE.Group();
     const sidewalkGroup = new THREE.Group();
 
     geoData.features.forEach(feature => {
@@ -147,14 +152,18 @@ export class SaoRemoMap {
       if (!coords || coords.length < 2) return;
 
       let streetWidth = 8.0;
+      let sidewalkWidth = 1.8;
       if (name.startsWith('Av.')) {
         streetWidth = 11.0;
+        sidewalkWidth = 2.2;
       } else if (name.includes('Arrozal') || name.includes('Paineiras') || name.includes('Pires')) {
         streetWidth = 6.4;
+        sidewalkWidth = 1.4;
       }
 
       const halfW = streetWidth / 2;
-      const curbExtra = 0.8;
+      const swWidth = halfW + sidewalkWidth;
+      const curbWidth = halfW + 0.25;
       const projectedPoints = coords.map(([lon, lat]) => this.project(lon, lat));
 
       for (let i = 0; i < projectedPoints.length - 1; i++) {
@@ -176,20 +185,20 @@ export class SaoRemoMap {
           p1,
           p2,
           streetWidth,
+          sidewalkWidth,
           len
         });
 
-        // 1. Calçada
-        const swWidth = halfW + curbExtra;
+        // 1. Calçada (concreto claro ao redor da rua inteira)
         const swGeom = new THREE.BufferGeometry();
         const swVertices = new Float32Array([
-          p1.x + nx * swWidth, 0.03, p1.y + nz * swWidth,
-          p2.x - nx * swWidth, 0.03, p2.y - nz * swWidth,
-          p1.x - nx * swWidth, 0.03, p1.y - nz * swWidth,
+          p1.x + nx * swWidth, 0.04, p1.y + nz * swWidth,
+          p2.x - nx * swWidth, 0.04, p2.y - nz * swWidth,
+          p1.x - nx * swWidth, 0.04, p1.y - nz * swWidth,
 
-          p1.x + nx * swWidth, 0.03, p1.y + nz * swWidth,
-          p2.x + nx * swWidth, 0.03, p2.y + nz * swWidth,
-          p2.x - nx * swWidth, 0.03, p2.y - nz * swWidth,
+          p1.x + nx * swWidth, 0.04, p1.y + nz * swWidth,
+          p2.x + nx * swWidth, 0.04, p2.y + nz * swWidth,
+          p2.x - nx * swWidth, 0.04, p2.y - nz * swWidth,
         ]);
         swGeom.setAttribute('position', new THREE.BufferAttribute(swVertices, 3));
         swGeom.computeVertexNormals();
@@ -197,7 +206,24 @@ export class SaoRemoMap {
         swMesh.receiveShadow = true;
         sidewalkGroup.add(swMesh);
 
-        // 2. Asfalto
+        // 2. Guia de meio-fio (pedra clara entre pista e calçada)
+        const curbGeom = new THREE.BufferGeometry();
+        const curbVertices = new Float32Array([
+          p1.x + nx * curbWidth, 0.05, p1.y + nz * curbWidth,
+          p2.x - nx * curbWidth, 0.05, p2.y - nz * curbWidth,
+          p1.x - nx * curbWidth, 0.05, p1.y - nz * curbWidth,
+
+          p1.x + nx * curbWidth, 0.05, p1.y + nz * curbWidth,
+          p2.x + nx * curbWidth, 0.05, p2.y + nz * curbWidth,
+          p2.x - nx * curbWidth, 0.05, p2.y - nz * curbWidth,
+        ]);
+        curbGeom.setAttribute('position', new THREE.BufferAttribute(curbVertices, 3));
+        curbGeom.computeVertexNormals();
+        const curbMesh = new THREE.Mesh(curbGeom, this.materials.curb);
+        curbMesh.receiveShadow = true;
+        curbGroup.add(curbMesh);
+
+        // 3. Pista de asfalto
         const geom = new THREE.BufferGeometry();
         const vertices = new Float32Array([
           p1.x + nx * halfW, 0.06, p1.y + nz * halfW,
@@ -215,8 +241,32 @@ export class SaoRemoMap {
         roadMesh.receiveShadow = true;
         roadGroup.add(roadMesh);
 
-        // Discos nos vértices
-        const discGeo = new THREE.CircleGeometry(halfW, 20);
+        // Discos nos vértices da calçada
+        const swDiscGeo = new THREE.CircleGeometry(swWidth, 24);
+        swDiscGeo.rotateX(-Math.PI / 2);
+        const swDisc1 = new THREE.Mesh(swDiscGeo, this.materials.sidewalk);
+        swDisc1.position.set(p1.x, 0.042, p1.y);
+        swDisc1.receiveShadow = true;
+        sidewalkGroup.add(swDisc1);
+
+        const swDisc2 = new THREE.Mesh(swDiscGeo, this.materials.sidewalk);
+        swDisc2.position.set(p2.x, 0.042, p2.y);
+        swDisc2.receiveShadow = true;
+        sidewalkGroup.add(swDisc2);
+
+        // Discos nos vértices do meio-fio
+        const curbDiscGeo = new THREE.CircleGeometry(curbWidth, 24);
+        curbDiscGeo.rotateX(-Math.PI / 2);
+        const curbDisc1 = new THREE.Mesh(curbDiscGeo, this.materials.curb);
+        curbDisc1.position.set(p1.x, 0.052, p1.y);
+        curbGroup.add(curbDisc1);
+
+        const curbDisc2 = new THREE.Mesh(curbDiscGeo, this.materials.curb);
+        curbDisc2.position.set(p2.x, 0.052, p2.y);
+        curbGroup.add(curbDisc2);
+
+        // Discos nos vértices do asfalto
+        const discGeo = new THREE.CircleGeometry(halfW, 24);
         discGeo.rotateX(-Math.PI / 2);
         const disc1 = new THREE.Mesh(discGeo, this.materials.asphalt);
         disc1.position.set(p1.x, 0.065, p1.y);
@@ -228,18 +278,7 @@ export class SaoRemoMap {
         disc2.receiveShadow = true;
         roadGroup.add(disc2);
 
-        // Discos de calçada
-        const swDiscGeo = new THREE.CircleGeometry(swWidth, 20);
-        swDiscGeo.rotateX(-Math.PI / 2);
-        const swDisc1 = new THREE.Mesh(swDiscGeo, this.materials.sidewalk);
-        swDisc1.position.set(p1.x, 0.035, p1.y);
-        sidewalkGroup.add(swDisc1);
-
-        const swDisc2 = new THREE.Mesh(swDiscGeo, this.materials.sidewalk);
-        swDisc2.position.set(p2.x, 0.035, p2.y);
-        sidewalkGroup.add(swDisc2);
-
-        // 3. Faixas amarelas
+        // 4. Faixas amarelas tracejadas
         const dashLen = 3.5;
         const gapLen = 3.0;
         const cycle = dashLen + gapLen;
@@ -254,13 +293,14 @@ export class SaoRemoMap {
           const dashMesh = new THREE.Mesh(dashGeo, this.materials.lineYellow);
           dashMesh.rotation.x = -Math.PI / 2;
           dashMesh.rotation.z = -angle;
-          dashMesh.position.set(cx, 0.09, cz);
+          dashMesh.position.set(cx, 0.08, cz);
           linesGroup.add(dashMesh);
         }
       }
     });
 
     this.scene.add(sidewalkGroup);
+    this.scene.add(curbGroup);
     this.scene.add(roadGroup);
     this.scene.add(linesGroup);
   }
@@ -469,15 +509,15 @@ export class SaoRemoMap {
 
         let hitsStreet = false;
         for (const seg of this.streetSegments) {
-          const segHalfW = (seg.streetWidth / 2) + 1.2; // Largura da rua + calçada
+          const segTotalW = (seg.streetWidth / 2) + (seg.sidewalkWidth || 1.8); // Largura da rua + calçada
           const dCenter = this.pointToSegmentDistance(posX, posZ, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-          if (dCenter < segHalfW + 2.8) {
+          if (dCenter < segTotalW + 2.5) {
             hitsStreet = true;
             break;
           }
           for (const c of corners) {
             const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-            if (dCorner < segHalfW + 0.6) {
+            if (dCorner < segTotalW + 0.4) {
               hitsStreet = true;
               break;
             }
