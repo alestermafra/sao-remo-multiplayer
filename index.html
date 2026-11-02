@@ -375,6 +375,13 @@
       text-shadow: 0 1px 4px rgba(0,0,0,0.8);
     }
 
+    /* Ocultar instruções de teclado no celular e aparelhos touch */
+    @media (pointer: coarse), (max-width: 900px) {
+      #info-badge {
+        display: none !important;
+      }
+    }
+
     @media (max-width: 600px) {
       #chat-container {
         left: 140px;
