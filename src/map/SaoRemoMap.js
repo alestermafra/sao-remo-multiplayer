@@ -586,18 +586,6 @@ export class SaoRemoMap {
 
           const key = Math.round(u) + '_' + Math.round(v);
           if (visited.has(key)) continue;
-          if (!this.isPointInPolygon(x, z, pts)) continue;
-
-          // 1. Não invadir pontos de referência (Circo, Campo, UBS, etc.)
-          let inLandmark = false;
-          for (const lm of landmarkPolygons) {
-            if (this.isPointInPolygon(x, z, lm)) {
-              inLandmark = true;
-              break;
-            }
-          }
-          if (inLandmark) continue;
-
           // Vértices dos 4 cantos rotacionados no eixo da rua
           const corners = [
             { x: x + dirU.x * halfH + dirV.x * halfH, z: z + dirU.z * halfH + dirV.z * halfH },
@@ -606,19 +594,48 @@ export class SaoRemoMap {
             { x: x - dirU.x * halfH - dirV.x * halfH, z: z - dirU.z * halfH - dirV.z * halfH }
           ];
 
-          // 2. Não invadir ruas nem calçadas
+          // Conferir inclusão no polígono de barracos (centro ou cantos tocando o polígono)
+          let inside = this.isPointInPolygon(x, z, pts);
+          if (!inside) {
+            let insideCorners = 0;
+            for (let i = 0; i < 4; i++) {
+              if (this.isPointInPolygon(corners[i].x, corners[i].z, pts)) {
+                insideCorners++;
+              }
+            }
+            if (insideCorners >= 2) inside = true;
+          }
+          if (!inside) continue;
+
+          // 1. Não invadir pontos de referência (Circo, Campo, etc.)
+          let inLandmark = false;
+          for (const lm of landmarkPolygons) {
+            if (this.isPointInPolygon(x, z, lm)) {
+              inLandmark = true;
+              break;
+            }
+            for (let i = 0; i < 4; i++) {
+              if (this.isPointInPolygon(corners[i].x, corners[i].z, lm)) {
+                inLandmark = true;
+                break;
+              }
+            }
+            if (inLandmark) break;
+          }
+          if (inLandmark) continue;
+
+          // 2. Colado às calçadas das ruas (o canto encosta na calçada sem invadir a pista/passeio)
           let hitsStreet = false;
           for (const seg of this.streetSegments) {
             if (seg.isViela) continue;
             const segTotalW = (seg.streetWidth / 2) + (seg.sidewalkWidth || 1.8);
-            const dCenter = this.pointToSegmentDistance(x, z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-            if (dCenter < segTotalW + 2.5) {
+            if (this.pointToSegmentDistance(x, z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y) < segTotalW) {
               hitsStreet = true;
               break;
             }
-            for (const c of corners) {
-              const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-              if (dCorner < segTotalW + 0.4) {
+            for (let i = 0; i < 4; i++) {
+              const dCorner = this.pointToSegmentDistance(corners[i].x, corners[i].z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+              if (dCorner < segTotalW - 0.1) {
                 hitsStreet = true;
                 break;
               }
@@ -627,18 +644,17 @@ export class SaoRemoMap {
           }
           if (hitsStreet) continue;
 
-          // 3. Não invadir vielas nem becos (deixa os corredores navegáveis entre as casas!)
+          // 3. Colado às vielas e becos (corredor de pedestres aberto, casas na margem)
           let hitsViela = false;
           for (const seg of this.vielaSegments) {
             const segHalfW = seg.streetWidth / 2; // 1.2m
-            const dCenter = this.pointToSegmentDistance(x, z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-            if (dCenter < segHalfW + 2.2) {
+            if (this.pointToSegmentDistance(x, z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y) < segHalfW + 0.8) {
               hitsViela = true;
               break;
             }
-            for (const c of corners) {
-              const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-              if (dCorner < segHalfW + 0.3) {
+            for (let i = 0; i < 4; i++) {
+              const dCorner = this.pointToSegmentDistance(corners[i].x, corners[i].z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+              if (dCorner < segHalfW - 0.1) {
                 hitsViela = true;
                 break;
               }
