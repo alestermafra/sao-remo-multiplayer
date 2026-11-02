@@ -16,6 +16,7 @@ export class SaoRemoMap {
     this.streetSegments = [];
     this.solidColliders = [];
     this.barracoColliders = [];
+    this.barracoGrid = new Map();
 
     this.buildGround();
     this.buildStreetsFromGeoJSON();
@@ -285,6 +286,9 @@ export class SaoRemoMap {
   }
 
   buildBuildingsFromGeoJSON() {
+    const barracoPolygons = [];
+    const landmarkPolygons = [];
+
     buildingsData.features.forEach(feature => {
       const name = feature.properties.name || '';
       const ring = feature.geometry.coordinates[0];
@@ -312,6 +316,7 @@ export class SaoRemoMap {
 
         // Register solid collider
         this.solidColliders.push(pts);
+        landmarkPolygons.push(pts);
 
         // Billboard Letreiro do Roldão na fachada voltada para a rua
         this.buildRoldaoSign(cX, 9.5, cZ);
@@ -328,7 +333,7 @@ export class SaoRemoMap {
         parkingMesh.receiveShadow = true;
         this.scene.add(parkingMesh);
 
-        // Pintar algumas vagas de estacionamento em linhas brancas
+        landmarkPolygons.push(pts);
         this.buildParkingStrips(pts);
       }
 
@@ -373,6 +378,7 @@ export class SaoRemoMap {
 
         // Collider sólido circular
         this.solidColliders.push(pts);
+        landmarkPolygons.push(pts);
       }
 
       // 4. CAMPO DE FUTEBOL DE TERRA
@@ -386,7 +392,7 @@ export class SaoRemoMap {
         fieldMesh.receiveShadow = true;
         this.scene.add(fieldMesh);
 
-        // Linhas de cal e traves de futebol
+        landmarkPolygons.push(pts);
         this.buildSoccerFieldAccents(pts, cX, cZ, true);
       }
 
@@ -402,6 +408,7 @@ export class SaoRemoMap {
         courtMesh.receiveShadow = true;
         this.scene.add(courtMesh);
 
+        landmarkPolygons.push(pts);
         this.buildSoccerFieldAccents(pts, cX, cZ, false);
       }
 
@@ -415,48 +422,49 @@ export class SaoRemoMap {
         groundMesh.position.y = 0.015;
         groundMesh.receiveShadow = true;
         this.scene.add(groundMesh);
+        landmarkPolygons.push(pts);
       }
 
-      // 7. ÁREA DOS BARRACOS DA SÃO REMO
+      // 7. ÁREAS DE BARRACOS DA SÃO REMO
       else if (name.includes('Barracos')) {
-        this.buildBarracosArea(pts);
+        barracoPolygons.push(pts);
       }
     });
+
+    if (barracoPolygons.length > 0) {
+      this.buildAllBarracos(barracoPolygons, landmarkPolygons);
+    }
   }
 
-  buildBarracosArea(pts) {
+  buildAllBarracos(barracoPolygons, landmarkPolygons) {
     const group = new THREE.Group();
 
-    // Pavimentação da base sob o bloco de barracos
-    const shape = this.createShapeFromPoints(pts);
-    const geom = new THREE.ShapeGeometry(shape);
-    geom.rotateX(-Math.PI / 2);
-    const groundMesh = new THREE.Mesh(geom, this.materials.barracoGround);
-    groundMesh.position.y = 0.012;
-    groundMesh.receiveShadow = true;
-    group.add(groundMesh);
+    // 1. Pavimentação da base sob cada polígono de barracos
+    barracoPolygons.forEach(pts => {
+      try {
+        const shape = this.createShapeFromPoints(pts);
+        const geom = new THREE.ShapeGeometry(shape);
+        geom.rotateX(-Math.PI / 2);
+        const groundMesh = new THREE.Mesh(geom, this.materials.barracoGround);
+        groundMesh.position.y = 0.012;
+        groundMesh.receiveShadow = true;
+        group.add(groundMesh);
+      } catch (e) {
+        // Ignora polígono inválido
+      }
+    });
 
-    // Orientação do quarteirão para preenchimento contínuo e colado
-    const p0 = pts[0], p1 = pts[1], p3 = pts[3];
-    const uX = (p1.x - p0.x), uY = (p1.y - p0.y);
-    const vX = (p3.x - p0.x), vY = (p3.y - p0.y);
-    const lenU = Math.hypot(uX, uY);
-    const lenV = Math.hypot(vX, vY);
-    const dirU = { x: uX / lenU, y: uY / lenU };
-    const dirV = { x: vX / lenV, y: vY / lenV };
-    const gridAngle = Math.atan2(dirU.y, dirU.x);
-
-    const houseMaterials = [
-      this.materials.brickWall,
-      this.materials.brickWall,
-      this.materials.yellowWall,
-      this.materials.blueWall,
-      this.materials.greenWall,
-      this.materials.pinkWall,
-      this.materials.whiteWall
+    // 2. Cores da paleta para os barracos da comunidade
+    const colorPalette = [
+      new THREE.Color(0xba5136), // tijolo exposto
+      new THREE.Color(0xba5136),
+      new THREE.Color(0xd9ae52), // ocre/amarelo
+      new THREE.Color(0x4a7599), // azul claro
+      new THREE.Color(0x4d7e57), // verde esperança
+      new THREE.Color(0xb5606d), // rosa
+      new THREE.Color(0xd4cfc7)  // reboco branco
     ];
 
-    // Dimensões do barraco colado
     const bw = 5.0;
     const bd = 5.0;
     const halfH = 2.5;
@@ -467,95 +475,185 @@ export class SaoRemoMap {
       return seed / 233280;
     };
 
-    let houseIndex = 0;
+    const visited = new Set();
+    const houses = [];
 
-    for (let u = 0.5; u <= lenU - bw; u += bw) {
-      for (let v = 0.5; v <= lenV - bd; v += bd) {
-        const uCenter = u + (bw / 2);
-        const vCenter = v + (bd / 2);
-        const posX = p0.x + dirU.x * uCenter + dirV.x * vCenter;
-        const posZ = p0.y + dirU.y * uCenter + dirV.y * vCenter;
+    // Gerar casas em grade global unificada de 5m x 5m (100% coladas, sem vãos entre blocos)
+    barracoPolygons.forEach(pts => {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      pts.forEach(p => {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minZ) minZ = p.y; if (p.y > maxZ) maxZ = p.y;
+      });
 
-        if (!this.isPointInPolygon(posX, posZ, pts)) continue;
+      const startX = Math.floor(minX / bw) * bw + halfH;
+      const startZ = Math.floor(minZ / bd) * bd + halfH;
 
-        // Vértices dos 4 cantos do barraco para garantir que nenhum canto invade a rua/calçada
-        const corners = [
-          { x: posX + dirU.x * halfH + dirV.x * halfH, z: posZ + dirU.y * halfH + dirV.y * halfH },
-          { x: posX - dirU.x * halfH + dirV.x * halfH, z: posZ - dirU.y * halfH + dirV.y * halfH },
-          { x: posX + dirU.x * halfH - dirV.x * halfH, z: posZ + dirU.y * halfH - dirV.y * halfH },
-          { x: posX - dirU.x * halfH - dirV.x * halfH, z: posZ - dirU.y * halfH - dirV.y * halfH }
-        ];
+      for (let x = startX; x <= maxX; x += bw) {
+        for (let z = startZ; z <= maxZ; z += bd) {
+          const key = Math.round(x) + '_' + Math.round(z);
+          if (visited.has(key)) continue;
+          if (!this.isPointInPolygon(x, z, pts)) continue;
 
-        let hitsStreet = false;
-        for (const seg of this.streetSegments) {
-          const segTotalW = (seg.streetWidth / 2) + (seg.sidewalkWidth || 1.8); // Largura da rua + calçada
-          const dCenter = this.pointToSegmentDistance(posX, posZ, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-          if (dCenter < segTotalW + 2.5) {
-            hitsStreet = true;
-            break;
-          }
-          for (const c of corners) {
-            const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
-            if (dCorner < segTotalW + 0.4) {
-              hitsStreet = true;
+          // Não sobrepor construções de referência (Circo, Campo, etc.)
+          let inLandmark = false;
+          for (const lm of landmarkPolygons) {
+            if (this.isPointInPolygon(x, z, lm)) {
+              inLandmark = true;
               break;
             }
           }
-          if (hitsStreet) break;
+          if (inLandmark) continue;
+
+          // Vértices dos 4 cantos para garantir que não invada nenhuma rua nem calçada
+          const corners = [
+            { x: x + halfH, z: z + halfH },
+            { x: x - halfH, z: z + halfH },
+            { x: x + halfH, z: z - halfH },
+            { x: x - halfH, z: z - halfH }
+          ];
+
+          let hitsStreet = false;
+          for (const seg of this.streetSegments) {
+            const segTotalW = (seg.streetWidth / 2) + (seg.sidewalkWidth || 1.8);
+            const dCenter = this.pointToSegmentDistance(x, z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+            if (dCenter < segTotalW + 2.5) {
+              hitsStreet = true;
+              break;
+            }
+            for (const c of corners) {
+              const dCorner = this.pointToSegmentDistance(c.x, c.z, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+              if (dCorner < segTotalW + 0.4) {
+                hitsStreet = true;
+                break;
+              }
+            }
+            if (hitsStreet) break;
+          }
+
+          if (hitsStreet) continue;
+
+          visited.add(key);
+
+          const rand = pseudoRandom();
+          const rand2 = pseudoRandom();
+          let floors = 1;
+          if (rand > 0.38) floors = 2;
+          if (rand > 0.80) floors = 3;
+
+          const colorIdx = Math.floor(rand * colorPalette.length);
+          const color = colorPalette[colorIdx];
+          const hasTank = rand2 > 0.35;
+
+          houses.push({
+            x,
+            z,
+            key,
+            floors,
+            height: floors * 2.8,
+            color,
+            hasTank,
+            tankOffset: {
+              x: (rand - 0.5) * (bw * 0.45),
+              z: (rand2 - 0.5) * (bd * 0.45)
+            }
+          });
         }
-
-        // Se invadir a rua ou calçada, pula
-        if (hitsStreet) continue;
-
-        houseIndex++;
-        const rand = pseudoRandom();
-        const rand2 = pseudoRandom();
-
-        // Andares variados (1 a 3 pavimentos) para criar o relevo da laje
-        let floors = 1;
-        if (rand > 0.38) floors = 2;
-        if (rand > 0.80) floors = 3;
-        const height = floors * 2.8;
-
-        // Barraco maciço colado
-        const houseGeo = new THREE.BoxGeometry(bw, height, bd);
-        const mat = houseMaterials[(houseIndex + Math.floor(rand * 3)) % houseMaterials.length];
-        const houseMesh = new THREE.Mesh(houseGeo, mat);
-        houseMesh.position.set(posX, height / 2, posZ);
-        houseMesh.rotation.y = -gridAngle;
-        houseMesh.castShadow = true;
-        houseMesh.receiveShadow = true;
-        group.add(houseMesh);
-
-        // Laje de concreto no topo
-        const slabGeo = new THREE.BoxGeometry(bw, 0.2, bd);
-        const slabMesh = new THREE.Mesh(slabGeo, this.materials.slabConcrete);
-        slabMesh.position.set(posX, height + 0.1, posZ);
-        slabMesh.rotation.y = -gridAngle;
-        slabMesh.castShadow = true;
-        group.add(slabMesh);
-
-        // Caixa d'água azul na laje (em ~65% das lajes)
-        if (rand2 > 0.35) {
-          const tankGeo = new THREE.CylinderGeometry(0.7, 0.62, 0.95, 10);
-          const tankMesh = new THREE.Mesh(tankGeo, this.materials.waterTankBlue);
-          tankMesh.position.set(
-            posX + (rand - 0.5) * (bw * 0.45),
-            height + 0.2 + 0.475,
-            posZ + (rand2 - 0.5) * (bd * 0.45)
-          );
-          tankMesh.castShadow = true;
-          group.add(tankMesh);
-        }
-
-        // Registrar colisor do barraco para o jogador colidir na parede externa
-        this.barracoColliders.push({
-          x: posX,
-          z: posZ,
-          radius: 2.8
-        });
       }
+    });
+
+    // 3. Renderização ultra-otimizada com THREE.InstancedMesh (apenas 5 draw calls para todos os barracos)
+    const houses1 = houses.filter(h => h.floors === 1);
+    const houses2 = houses.filter(h => h.floors === 2);
+    const houses3 = houses.filter(h => h.floors === 3);
+    const tankHouses = houses.filter(h => h.hasTank);
+
+    const dummy = new THREE.Object3D();
+
+    const createFloorMesh = (houseList, floorHeight) => {
+      if (houseList.length === 0) return null;
+      const geo = new THREE.BoxGeometry(bw, floorHeight, bd);
+      const mesh = new THREE.InstancedMesh(geo, this.materials.whiteWall, houseList.length);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      for (let i = 0; i < houseList.length; i++) {
+        const h = houseList[i];
+        dummy.position.set(h.x, floorHeight / 2, h.z);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        mesh.setColorAt(i, h.color);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      return mesh;
+    };
+
+    const mesh1 = createFloorMesh(houses1, 2.8);
+    const mesh2 = createFloorMesh(houses2, 5.6);
+    const mesh3 = createFloorMesh(houses3, 8.4);
+    if (mesh1) group.add(mesh1);
+    if (mesh2) group.add(mesh2);
+    if (mesh3) group.add(mesh3);
+
+    // Lajes de concreto
+    if (houses.length > 0) {
+      const slabGeo = new THREE.BoxGeometry(bw, 0.2, bd);
+      const slabMesh = new THREE.InstancedMesh(slabGeo, this.materials.slabConcrete, houses.length);
+      slabMesh.castShadow = true;
+      slabMesh.receiveShadow = true;
+      for (let i = 0; i < houses.length; i++) {
+        const h = houses[i];
+        dummy.position.set(h.x, h.height + 0.1, h.z);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        slabMesh.setMatrixAt(i, dummy.matrix);
+      }
+      slabMesh.instanceMatrix.needsUpdate = true;
+      group.add(slabMesh);
     }
+
+    // Caixas d'água azuis no teto
+    if (tankHouses.length > 0) {
+      const tankGeo = new THREE.CylinderGeometry(0.7, 0.62, 0.95, 10);
+      const tankMesh = new THREE.InstancedMesh(tankGeo, this.materials.waterTankBlue, tankHouses.length);
+      tankMesh.castShadow = true;
+      for (let i = 0; i < tankHouses.length; i++) {
+        const h = tankHouses[i];
+        dummy.position.set(
+          h.x + h.tankOffset.x,
+          h.height + 0.2 + 0.475,
+          h.z + h.tankOffset.z
+        );
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        tankMesh.setMatrixAt(i, dummy.matrix);
+      }
+      tankMesh.instanceMatrix.needsUpdate = true;
+      group.add(tankMesh);
+    }
+
+    // 4. Cadastrar apenas casas de BORDA no spatial grid para colisões instantâneas (<0.001ms)
+    houses.forEach(h => {
+      const neighbors = [
+        Math.round(h.x + bw) + '_' + Math.round(h.z),
+        Math.round(h.x - bw) + '_' + Math.round(h.z),
+        Math.round(h.x) + '_' + Math.round(h.z + bd),
+        Math.round(h.x) + '_' + Math.round(h.z - bd)
+      ];
+      const isBoundary = neighbors.some(n => !visited.has(n));
+      if (isBoundary) {
+        const cx = Math.floor(h.x / 15);
+        const cz = Math.floor(h.z / 15);
+        const key = `${cx}_${cz}`;
+        let list = this.barracoGrid.get(key);
+        if (!list) {
+          list = [];
+          this.barracoGrid.set(key, list);
+        }
+        list.push({ x: h.x, z: h.z, radius: 2.8 });
+      }
+    });
 
     this.scene.add(group);
   }
@@ -730,15 +828,23 @@ export class SaoRemoMap {
       }
     }
 
-    // Colisores individuais dos barracos colados
-    for (let i = 0; i < this.barracoColliders.length; i++) {
-      const b = this.barracoColliders[i];
-      const dx = x - b.x;
-      if (dx > 2.8 || dx < -2.8) continue;
-      const dz = z - b.z;
-      if (dz > 2.8 || dz < -2.8) continue;
-      if (dx * dx + dz * dz < 2.8 * 2.8) {
-        return true;
+    // Colisores dos barracos (spatial hashing em células de 15x15m para máxima performance)
+    const cx = Math.floor(x / 15);
+    const cz = Math.floor(z / 15);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const list = this.barracoGrid.get(`${cx + dx}_${cz + dz}`);
+        if (!list) continue;
+        for (let i = 0; i < list.length; i++) {
+          const b = list[i];
+          const diffX = x - b.x;
+          if (diffX > 2.8 || diffX < -2.8) continue;
+          const diffZ = z - b.z;
+          if (diffZ > 2.8 || diffZ < -2.8) continue;
+          if (diffX * diffX + diffZ * diffZ < 2.8 * 2.8) {
+            return true;
+          }
+        }
       }
     }
 
